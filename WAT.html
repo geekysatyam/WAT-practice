@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WAT Practice Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117; /* Dark background */
+            color: #c9d1d9; /* Light text */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 900px;
+            background-color: #161b22; /* Slightly lighter dark card */
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            padding: 30px;
+        }
+        .progress-bar {
+            height: 10px;
+            border-radius: 5px;
+            background-color: #21262d;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        .progress-fill {
+            height: 100%;
+            width: 100%; /* Start full */
+            background-color: #38a169; /* Green color */
+            transition: width 0.1s linear; /* Smooth visual update */
+        }
+        input[type="text"] {
+            background-color: #0d1117;
+            border: 1px solid #30363d;
+            color: #c9d1d9;
+            padding: 12px;
+            border-radius: 8px;
+            width: 100%;
+            font-size: 1.125rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input[type="text"]:focus {
+            border-color: #58a6ff;
+        }
+        button {
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        button:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+        /* Custom scrollbar for results */
+        .results-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        .results-scroll::-webkit-scrollbar-thumb {
+            background-color: #30363d;
+            border-radius: 3px;
+        }
+        .results-scroll::-webkit-scrollbar-track {
+            background-color: #161b22;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="app">
+        <!-- Content will be rendered here by JavaScript -->
+    </div>
+</div>
+
+<script>
+    // WAT Words provided by the user (50 words)
+    const WORDS = [
+        'Scene', 'Impossible', 'Society', 'Choose', 'Unjust', 'Image', 'Exam', 'Drive',
+        'Internet', 'Communication', 'Keys', 'Murder', 'Commit', 'Flee', 'Practice',
+        'Organize', 'Phone', 'New', 'Agency', 'Security', 'Since', 'Peace', 'Fall',
+        'Hit', 'Run', 'Chase', 'Enter', 'Industry', 'Limit', 'Development', 'Coach',
+        'Food', 'Special', 'Biomass', 'Release', 'Head', 'Launch', 'Medal', 'Play',
+        'Department', 'Under', 'Curb', 'Cooperate', 'Hike', 'War', 'Normal',
+        'Challenge', 'Serving', 'Bane', 'Rapid'
+    ];
+
+    const MAX_TIME_MS = 15000;
+    const app = document.getElementById('app');
+
+    // Application State
+    let state = {
+        currentWordIndex: 0,
+        testRunning: false,
+        results: [],
+        timerIntervalId: null,
+        startTime: 0,
+    };
+
+    /** Utility to safely get element and update content */
+    function updateElement(id, content, attr = 'innerHTML') {
+        const el = document.getElementById(id);
+        if (el) el[attr] = content;
+    }
+
+    /**
+     * Renders the main test interface (Word, Timer, Input).
+     */
+    function renderTestScreen() {
+        app.innerHTML = `
+            <h1 class="text-3xl font-bold mb-6 text-center text-blue-400">Word Association Test Practice</h1>
+
+            <div class="flex justify-between items-center mb-4">
+                <span class="text-lg font-medium">Word ${state.currentWordIndex + 1} / ${WORDS.length}</span>
+                <span id="timerDisplay" class="text-2xl font-extrabold text-green-400">15.0s</span>
+            </div>
+
+            <div class="progress-bar">
+                <div id="progressBarFill" class="progress-fill" style="width: 100%;"></div>
+            </div>
+
+            <div class="h-40 flex items-center justify-center mb-8 bg-[#21262d] rounded-xl p-4">
+                <p id="currentWordDisplay" class="text-6xl font-extrabold tracking-wider text-white text-center"></p>
+            </div>
+
+            <input type="text" id="responseInput" placeholder="Type your association here (Press Enter to submit early)" maxlength="50" autocomplete="off" />
+
+            <div class="mt-4 flex justify-end">
+                <button onclick="recordResponse(true)" class="bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg hover:bg-blue-700">
+                    Submit & Next (Enter)
+                </button>
+            </div>
+        `;
+
+        // Add event listener for 'Enter' key
+        const input = document.getElementById('responseInput');
+        if (input) {
+            input.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    recordResponse(true); // Manually submitted
+                }
+            });
+        }
+    }
+
+    /**
+     * Renders the starting screen.
+     */
+    function renderStartScreen() {
+        app.innerHTML = `
+            <h1 class="text-4xl font-extrabold mb-4 text-center text-white">WAT Preparation: 50 Words</h1>
+            <p class="text-lg text-center text-gray-400 mb-8">
+                In this test, each word will be displayed for exactly 15 seconds. You must quickly write the first spontaneous, positive, and appropriate thought that comes to mind.
+            </p>
+
+            <div class="bg-[#21262d] rounded-lg p-6 mb-8 border border-gray-600">
+                <h2 class="text-xl font-semibold mb-3 text-blue-300">Test Rules:</h2>
+                <ul class="space-y-2 text-gray-300 list-disc list-inside">
+                    <li><span class="font-bold">Time Limit:</span> 15 seconds per word.</li>
+                    <li><span class="font-bold">Action:</span> Type your response and press Enter, or wait for the timer to expire.</li>
+                    <li><span class="font-bold">Total Words:</span> ${WORDS.length}</li>
+                </ul>
+            </div>
+
+            <button onclick="startTest()" class="w-full bg-green-600 text-white font-extrabold py-3 px-6 rounded-lg text-xl hover:bg-green-700">
+                Start Test Now
+            </button>
+        `;
+    }
+
+    /**
+     * Renders the final results screen.
+     */
+    function renderResultsScreen() {
+        const totalTime = state.results.reduce((sum, r) => sum + r.timeTaken, 0);
+        const avgTime = (totalTime / state.results.length / 1000).toFixed(2);
+        const totalWords = state.results.length;
+        const missedWords = state.results.filter(r => r.timeTaken === MAX_TIME_MS).length;
+
+        const resultRows = state.results.map((r, index) => `
+            <tr class="border-t border-[#30363d] hover:bg-[#21262d]">
+                <td class="px-4 py-3 text-center text-gray-400">${index + 1}</td>
+                <td class="px-4 py-3 font-semibold text-white">${r.word}</td>
+                <td class="px-4 py-3">
+                    <span class="block w-full text-md p-2 rounded-md ${r.response.trim() === '' ? 'text-red-400 bg-red-900 bg-opacity-30' : 'text-green-300'}">
+                        ${r.response.trim() === '' ? 'N/A (Missed/Blank)' : r.response}
+                    </span>
+                </td>
+                <td class="px-4 py-3 text-center font-mono ${r.timeTaken === MAX_TIME_MS ? 'text-red-400' : 'text-yellow-400'}">
+                    ${(r.timeTaken / 1000).toFixed(2)}s
+                </td>
+            </tr>
+        `).join('');
+
+        app.innerHTML = `
+            <h1 class="text-4xl font-extrabold mb-6 text-center text-green-400">Test Complete!</h1>
+
+            <div class="grid grid-cols-3 gap-4 mb-8 text-center">
+                <div class="bg-blue-900/30 p-4 rounded-lg">
+                    <p class="text-2xl font-bold text-blue-300">${totalWords}</p>
+                    <p class="text-sm text-gray-400">Total Words</p>
+                </div>
+                <div class="bg-green-900/30 p-4 rounded-lg">
+                    <p class="text-2xl font-bold text-green-300">${avgTime}s</p>
+                    <p class="text-sm text-gray-400">Avg. Reaction Time</p>
+                </div>
+                <div class="bg-red-900/30 p-4 rounded-lg">
+                    <p class="text-2xl font-bold text-red-300">${missedWords}</p>
+                    <p class="text-sm text-gray-400">Missed (15s Timeout)</p>
+                </div>
+            </div>
+
+            <h2 class="text-2xl font-semibold mb-4 text-white border-b border-[#30363d] pb-2">Detailed Responses</h2>
+
+            <div class="overflow-y-auto max-h-[400px] results-scroll rounded-lg border border-[#30363d]">
+                <table class="min-w-full table-fixed">
+                    <thead class="sticky top-0 bg-[#21262d] border-b border-[#30363d]">
+                        <tr>
+                            <th class="w-16 px-4 py-2 text-left text-xs font-medium uppercase tracking-wider">#</th>
+                            <th class="w-1/4 px-4 py-2 text-left text-xs font-medium uppercase tracking-wider">Word</th>
+                            <th class="w-1/2 px-4 py-2 text-left text-xs font-medium uppercase tracking-wider">Your Response</th>
+                            <th class="w-1/5 px-4 py-2 text-center text-xs font-medium uppercase tracking-wider">Time Taken</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-[#30363d] text-sm">
+                        ${resultRows}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="mt-8 text-center">
+                <button onclick="window.location.reload()" class="bg-gray-700 text-white font-semibold py-2 px-6 rounded-lg hover:bg-gray-600">
+                    Restart Test
+                </button>
+            </div>
+        `;
+    }
+
+    /**
+     * Logic to record the current response and move to the next word.
+     * @param {boolean} isManualSubmit - True if the user pressed Enter/Submit, false if timeout.
+     */
+    function recordResponse(isManualSubmit) {
+        if (!state.testRunning) return;
+
+        const inputEl = document.getElementById('responseInput');
+        const response = inputEl ? inputEl.value.trim() : '';
+
+        // Calculate time taken
+        const endTime = Date.now();
+        let timeTaken = isManualSubmit ? (endTime - state.startTime) : MAX_TIME_MS;
+
+        // Ensure time taken doesn't exceed 15s if manually submitted
+        if (isManualSubmit && timeTaken > MAX_TIME_MS) {
+             timeTaken = MAX_TIME_MS;
+        }
+
+        // Store result
+        state.results.push({
+            word: WORDS[state.currentWordIndex],
+            response: response,
+            timeTaken: timeTaken,
+            wasSubmitted: isManualSubmit
+        });
+
+        // Clear timers and advance
+        clearInterval(state.timerIntervalId);
+        state.currentWordIndex++;
+        nextWord();
+    }
+
+    /**
+     * Updates the timer display and progress bar.
+     */
+    function updateTimerDisplay() {
+        const elapsed = Date.now() - state.startTime;
+        const remaining = MAX_TIME_MS - elapsed;
+
+        if (remaining <= 0) {
+            recordResponse(false); // Timeout: 15s passed
+        } else {
+            const seconds = (remaining / 1000).toFixed(1);
+            const percentage = (remaining / MAX_TIME_MS) * 100;
+
+            updateElement('timerDisplay', `${seconds}s`);
+            updateElement('progressBarFill', '', 'style', `width: ${percentage}%;`);
+        }
+    }
+
+    /**
+     * Starts the timer for the next word.
+     */
+    function startTimer() {
+        state.startTime = Date.now();
+
+        // Initial render
+        updateTimerDisplay();
+
+        // Set interval for display updates
+        state.timerIntervalId = setInterval(updateTimerDisplay, 100);
+    }
+
+    /**
+     * Controls the flow of the test, moving between words or finishing.
+     */
+    function nextWord() {
+        if (state.currentWordIndex >= WORDS.length) {
+            state.testRunning = false;
+            renderResultsScreen();
+            return;
+        }
+
+        const currentWord = WORDS[state.currentWordIndex];
+
+        // Update UI
+        updateElement('currentWordDisplay', currentWord);
+        const input = document.getElementById('responseInput');
+        if (input) {
+            input.value = '';
+            input.focus();
+        }
+
+        // Start 15s timer for the new word
+        startTimer();
+    }
+
+    /**
+     * Initializes the test.
+     */
+    window.startTest = function() {
+        state.currentWordIndex = 0;
+        state.results = [];
+        state.testRunning = true;
+        renderTestScreen();
+        nextWord();
+    };
+
+    /**
+     * Global access for the submit button click
+     */
+    window.recordResponse = recordResponse;
+
+
+    // Initial app load: show the start screen
+    renderStartScreen();
+</script>
+
+</body>
+</html>
